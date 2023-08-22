@@ -6,14 +6,6 @@
     <title>Protected Page</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="shortcut icon" href="#">
-
-    <!-- do not cache this page -->
-    <meta http-equiv="cache-control" content="max-age=0" />
-    <meta http-equiv="cache-control" content="no-cache" />
-    <meta http-equiv="expires" content="0" />
-    <meta http-equiv="expires" content="Tue, 01 Jan 1980 1:00:00 GMT" />
-    <meta http-equiv="pragma" content="no-cache" />
-
 	<meta name="description" content="Arbre Généalogique Louis Geisler" />
 	<meta name="author" content="Louis Geisler" />
 
@@ -78,11 +70,38 @@
 </head>
 <body>
 
-<!-- Read Gedcom file -->
-<script async>
+<section id="Loading">
 
+    <style>
 
-</script>
+        #loader {
+            width: 100%;
+            height: 100%;
+            border: 10vmin solid;
+            border-image: conic-gradient(transparent var(--angle), black 0 100%) 1;
+            /*
+            background-image: conic-gradient(transparent var(--angle), rgba(var(--color), calc(255 - var(--color)), 0, 1) 0 100%) 1;
+            */
+            animation: rotate linear infinite forwards 3s;
+            
+			box-sizing: border-box;
+            padding: 10vmin;
+		}
+
+    </style>
+    <div id="loader" class="text2fit">
+            Loading...
+    </div>
+    <script>
+
+        function loader () {
+            window.location.href = "#Loading";
+            window.onresize();
+        }
+
+    </script>
+
+</section>
 
 <section id="Main">
     
@@ -210,7 +229,7 @@
 
         async function main() {
 
-            window.location.href = "#Main";
+            loader();
 
             let decrypted_data = await decryptFromFileToArray('./data.encrypted.txt', passphrase);
             decrypted_data = new TextDecoder().decode(decrypted_data);
@@ -219,7 +238,7 @@
             
             html_info_family = decrypted_html.getElementById("info_gen_template").innerHTML;
             whatsapp_conv_url = decrypted_html.getElementById("whatsapp_conv_url").textContent;
-            log(whatsapp_conv_url)
+            
             const csv_url = await decryptFile('./output.encrypted.csv', passphrase)
             let data = await parseCSV(csv_url);
             data.forEach(e => {
@@ -243,6 +262,8 @@
             document.getElementById("iframe").src = (
                 pdf_url + "#toolbar=0&view=FitV&scrollbar=1"
             )
+
+            window.location.href = "#Main";
 
             Array.from(document.getElementsByClassName("wa_btn")).map(e => {e.onclick = () => {
                 window.open(whatsapp_conv_url, '_blank').focus();
@@ -302,6 +323,8 @@
                 graph();
                 await go_back();
             };
+
+            window.onresize();
             
         };
     </script>
@@ -420,11 +443,13 @@
             initial-value: 0%;
             inherits: false;
         }
+
         @property --color {
             syntax: '<integer>';
             initial-value: 0;
             inherits: false;
         }
+
 		#container {
 			gap: 4vmin;
 			padding: 4vmin;
@@ -1235,7 +1260,8 @@
         );
         $("go_back").style.display = "none";
         $("donation").style.display = "none";
-        main();
+        window.location.href = "#Main";
+        return;
     };
 </script>
 
@@ -1313,6 +1339,7 @@
         //log("resize", n_time);
         for(var e of document.getElementsByClassName("text2fit")) {
             if (!isHidden(e)) {
+                log(e)
                 textFit(e, {
                     minFontSize:5,
                     maxFontSize: window.innerHeight,
@@ -1583,6 +1610,7 @@
     let passwordKey = "pwd";
     let queryParams = new URLSearchParams(window.location.search);
     let passphrase = queryParams.get(passwordKey);
+
 </script>
 
 <script>
