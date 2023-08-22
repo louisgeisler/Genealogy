@@ -126,7 +126,7 @@
 			justify-items: stretch;
 			align-content: stretch;
             grid-template-rows: 1fr;
-			grid-template-columns: 3fr 9fr 3fr;
+			grid-template-columns: 3fr 9fr 2fr;
         }
         .wa_btn {
             background: #3AC04C;
@@ -137,7 +137,7 @@
 			justify-items: stretch;
 			align-content: stretch;
             grid-template-rows: 1fr;
-			grid-template-columns: 3fr 9fr 3fr;
+			grid-template-columns: 2fr 9fr 2fr;
         }
 		.wa_btn > * {
 			justify-items: stretch;
@@ -172,16 +172,16 @@
     </style>
 
     <div id="main_container">
-        <button id="dynamic" style="grid-area: dynamic;" class="text2fit">Voir l'Arbre (Dynamic)</button>
-        <button id="pdf_button" style="grid-area: pdf_button;" class="text2fit">Voir l'Arbre (Static PDF)</button>
-        <button id="tombi" style="grid-area: trombi;" class="text2fit">Jouer au Trombinoscope</button>
-        <button id="relat" style="grid-area: relat;" class="text2fit">Jouer au Relationoscope</button>
-        <button id="download_pdf" style="grid-area: download_pdf;" class="text2fit">Télécharger l'Arbre Généalogique (PDF)</button>
-        <button id="download_csv" style="grid-area: download_csv;" class="text2fit">Télécharger l'Arbre Généalogique (CSV)</button>
-        <button id="info" style="grid-area: info;" class="text2fit">Plus d'information</button>
+        <button id="dynamic" style="grid-area: dynamic;" class="text2fit">🚧 Arbre Dynamique 🚧</button>
+        <button id="pdf_button" style="grid-area: pdf_button;" class="text2fit">Arbre Statique</button>
+        <button id="trombi" style="grid-area: trombi;" class="text2fit">Trombinoscope</button>
+        <button id="relat" style="grid-area: relat;" class="text2fit">Relationoscope</button>
+        <button id="download_pdf" style="grid-area: download_pdf;" class="text2fit">Arbre Généalogique (PDF)</button>
+        <button id="download_csv" style="grid-area: download_csv;" class="text2fit">Arbre Généalogique (CSV)</button>
+        <button id="info" style="grid-area: info;" class="text2fit">Plus d'Information</button>
         <button class="wa_btn" style="grid-area: wa_btn;">
             <div class="icon" style="grid-area: icon1;"></div>
-            <div style="grid-area: coffee_text;" class="text2fit">Rejoindre Groupe WhatsApp</div>
+            <div style="grid-area: coffee_text;" class="text2fit">Groupe WhatsApp</div>
             <div class="icon" style="grid-area: icon2;"></div>
         </button>
         <button id="coffee" style="grid-area: coffee;" onclick="window.open('https://www.buymeacoffee.com/louisgeisler', '_blank').focus()">
@@ -273,18 +273,24 @@
                 document.body.removeChild(a);
             }
     
-            $("tombi").onclick = async () => {
-                await Promise.race([
-                    Game.main("trombinoscope"),
-                    go_back()
-                ]);
+            $("trombi").onclick = async () => {
+                let result;
+                do {
+                    result = await Promise.race([
+                        Game.main("trombinoscope"),
+                        go_back()
+                    ]);
+                } while (result=="Retry");
             };
 
             $("relat").onclick = async () => {
-                await Promise.race([
-                    Game.main("relationoscope"),
-                    go_back()
-                ]);
+                let result;
+                do {
+                    result = await Promise.race([
+                        Game.main("relationoscope"),
+                        go_back()
+                    ]);
+                } while (result=="Retry");
             };
 
             $("pdf_button").onclick = async () => {
@@ -498,7 +504,7 @@
     <div id="container">
         <div id="photo" class="text2fit"></div>
         <div id="score" class="text2fit">
-            <b>Score:</b> <span id='scoring'>0</span> (<span id="current_round">0</span>/<span id="max_round"></span>)
+            <b>Score:</b> <span id='scoring'>0</span> (<span id="current_round"></span>/<span id="max_round"></span>)
         </div>
         <button id="b0" class="text2fit">0</button>
         <button id="b1" class="text2fit">1</button>
@@ -511,7 +517,7 @@
         const Game = {
 
             score: 0,
-            round_counter: 0,
+            round_counter: 1,
             max_round: 6,
 
             buttons: [...$("container").getElementsByTagName("button")],
@@ -528,7 +534,7 @@
 
             init: function() {
                 this.score = 0;
-                this.round_counter = 0;
+                this.round_counter = 1;
                 window.location.href = "#PlayGame";
                 names = Object.keys(individuals);
                 names = names.filter(e => individuals[e]["ImageURL"]);
@@ -670,13 +676,19 @@
                                 i => {
                                     return (
                                         (
-                                            info["ID Père"]
-                                            &&
-                                            individuals[i]["ID Père"]==info["ID Père"]
-                                        ) || (
-                                            info["ID Mère"]
-                                            &&
-                                            individuals[i]["ID Mère"]==info["ID Mère"]
+                                            individuals[i]["Nom"]!=info["Nom"]
+                                        )
+                                        &&
+                                        (
+                                            (
+                                                info["ID Père"]
+                                                &&
+                                                individuals[i]["ID Père"]==info["ID Père"]
+                                            ) || (
+                                                info["ID Mère"]
+                                                &&
+                                                individuals[i]["ID Mère"]==info["ID Mère"]
+                                            )
                                         )
                                     )
                                 }
@@ -818,6 +830,8 @@
                     e.classList.remove("wrong_one");
                 })
 
+                $("current_round").innerText = this.round_counter;
+
                 document.getElementById("photo").style.background = "url('" + individuals[mysterious]["ImageURL"] + "') no-repeat center/contain";
                 
                 window.onresize();
@@ -884,8 +898,7 @@
                 $("scoring").innerText = this.score;
                 
                 right_button.classList.add("right_one");
-                
-                $("current_round").innerText = this.round_counter;
+
                 window.onresize();
             },
 
@@ -895,11 +908,12 @@
                     "trombinoscope": new this.possible_name(),
                     "relationoscope": new this.possible_relation()
                 }[mode]
+                log(mode, possible_generator)
                 for(;this.round_counter<this.max_round; this.round_counter++) {
                     await this.round(possible_generator);
-                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 };
-                await final();
+                return await final();
             },
         }
 
@@ -958,10 +972,14 @@
             window.location.href = "#EndGame";
             
             $("final_score").innerText = Game.score;
-            $("retry").onclick = async () => {
-                await Game.main();
-            };
+
             window.onresize();
+
+            await new Promise(resolve => 
+                $("retry").onclick = resolve
+            );
+
+            return "Retry"
         }
     </script>
 
@@ -1183,10 +1201,11 @@
 <!-- Corner Buttons Style -->
 <style>
 	.corner_button {
-		font-size: 8vmin !important;
+		font-size: 10vmin !important;
 		padding: 0.5vmin;
 		color:white;
 		background-color: black;
+        cursor: pointer;
 		/*z-index: 5;*/
         /*opacity: 0.8;*/
 	}
@@ -1313,7 +1332,7 @@
     }
 </script>
 
-<!-- Donation Button -->
+<!-- Buy Me A Coffee Button -->
 <style>
 	#donation {
 		border-top-left-radius: 1vmin;
@@ -1324,8 +1343,8 @@
 		border-bottom: solid 0.25vmax white;
         background: rgb(255, 221, 0) url(https://cdn.buymeacoffee.com/widget/assets/coffee%20cup.svg) no-repeat center/contain;
         color: white;
-        height: 8vmin;
-        width: 8vmin;
+        height: 10vmin;
+        width: 10vmin;
         display: none;
 	}
 </style>
