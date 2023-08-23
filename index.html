@@ -333,7 +333,6 @@
 
             // Since csvDataBuffer is an ArrayBuffer, first convert it to text
             const csvText = new TextDecoder().decode(csv_data_buffer);
-
             // Assuming parseCSV is a function you have that processes a CSV string
             const csv_data = await parseCSV(csvText);
             
@@ -385,7 +384,7 @@
                 pdf_data_buffer
             } = await processFilesAndData(passphrase);
 
-            const pdf_blob = new Blob([pdf_data_buffer], { type: "mimeType" });
+            const pdf_blob = new Blob([pdf_data_buffer], { type: "application/pdf" });
             const pdf_url = URL.createObjectURL(pdf_blob);
 
             document.getElementById("iframe").src = (
