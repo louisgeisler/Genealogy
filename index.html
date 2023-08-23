@@ -212,36 +212,143 @@
     <script>
 
         let nodes = [];
-
-        function p(pointer) {
-            const p2 = (v) => parseInt(v.replace("@", "").replace("I", ""));
-            if (Array.isArray(pointer)) {
-                //log(pointer.map(p2));
-                return pointer.map(p2);
-            } else {
-                //log(p2(pointer));
-                return p2(pointer);
-            }  
-        }
-
         let html_info_family;
         let whatsapp_conv_url;
+        let individuals = {};            
 
-        async function main() {
+        async function parseCSV(data) {
+            try {
 
-            loader();
+                // Trim the data to remove any leading/trailing whitespace or newlines
+                data = data.trim();
 
-            let decrypted_data = await decryptFromFileToArray('./data.encrypted.txt', passphrase);
-            decrypted_data = new TextDecoder().decode(decrypted_data);
-            
-            const decrypted_html = new DOMParser().parseFromString(decrypted_data, "text/html");
-            
+                let results = [];
+                let rows = data.split('\n');
+
+                // If there's no data or headers, return an empty array
+                if (rows.length === 0) return results;
+
+                let headers = parseCSVRow(rows[0]);
+
+                for (let i = 1; i < rows.length; i++) {
+                    // If the row is empty, continue to the next iteration
+                    if (!rows[i].trim()) continue;
+
+                    let cells = parseCSVRow(rows[i]);
+                    let obj = {};
+
+                    for (let j = 0; j < headers.length; j++) {
+                        obj[headers[j].trim()] = cells[j] ? cells[j].trim() : '';
+                    }
+
+                    results.push(obj);
+                }
+
+                return results;
+
+            } catch (error) {
+                console.error('Error fetching or parsing CSV:', error);
+                return null;
+            }
+        }
+
+        function parseCSVRow(row) {
+            let cells = [];
+            let inQuotes = false;
+            let currentCell = '';
+
+            for(let i = 0; i < row.length; i++) {
+                let char = row[i];
+
+                if(inQuotes) {
+                    if(char === '"') {
+                        if(i < row.length - 1 && row[i+1] === '"') {
+                            // Handle double quote escape sequence
+                            currentCell += '"';
+                            i++; // Skip next character
+                        } else {
+                            inQuotes = false;
+                        }
+                    } else {
+                        currentCell += char;
+                    }
+                } else {
+                    if(char === ',') {
+                        cells.push(currentCell);
+                        currentCell = '';
+                    } else if(char === '"') {
+                        inQuotes = true;
+                    } else {
+                        currentCell += char;
+                    }
+                }
+            }
+
+            cells.push(currentCell);
+
+            return cells;
+        }
+
+
+        function decryptWithWorker(filePath, passphrase) {
+            return new Promise((resolve, reject) => {
+                const worker = new Worker('decryptionWorker.js');
+
+                worker.onmessage = function(event) {
+                    const receivedData = event.data;
+                    
+                    if (receivedData.error) {
+                        reject(new Error(receivedData.error));
+                    } else {
+                        resolve(receivedData);
+                    }
+                    
+                    // Terminate the worker after it's done
+                    worker.terminate();
+                };
+
+                worker.onerror = function(error) {
+                    reject(new Error("There was an error with the Worker process."));
+                };
+
+                // Send both filePath and passphrase to the worker
+                worker.postMessage({ filePath: filePath, passphrase: passphrase });
+            });
+        }
+
+
+        async function processFilesAndData(passphrase) {
+
+            const [decrypted_data_buffer, csv_data_buffer, pdf_data_buffer] = await Promise.all([
+                decryptWithWorker('./data.encrypted.txt', passphrase),
+                decryptWithWorker('./output.encrypted.csv', passphrase),
+                decryptWithWorker('./Geisler.encrypted.pdf', passphrase)
+            ]);
+
+            const decoded_data = new TextDecoder().decode(decrypted_data_buffer);
+            decrypted_html = new DOMParser().parseFromString(decoded_data, "text/html");
+
             html_info_family = decrypted_html.getElementById("info_gen_template").innerHTML;
             whatsapp_conv_url = decrypted_html.getElementById("whatsapp_conv_url").textContent;
+
+            // Since csvDataBuffer is an ArrayBuffer, first convert it to text
+            const csvText = new TextDecoder().decode(csv_data_buffer);
+
+            // Assuming parseCSV is a function you have that processes a CSV string
+            const csv_data = await parseCSV(csvText);
             
-            const csv_url = await decryptFile('./output.encrypted.csv', passphrase)
-            let data = await parseCSV(csv_url);
-            data.forEach(e => {
+            function p(pointer) {
+                const p2 = (v) => parseInt(v.replace("@", "").replace("I", ""));
+                if (Array.isArray(pointer)) {
+                    //log(pointer.map(p2));
+                    return pointer.map(p2);
+                } else {
+                    //log(p2(pointer));
+                    return p2(pointer);
+                }  
+            }
+                
+            csv_data.forEach(e => {
                 individuals[e["ID"]] = e;
                 nodes.push({
                     id: parseInt(e["ID"].replace("@", "").replace("I", "")),
@@ -254,10 +361,32 @@
                     location: e["Résidence"] || null,
                     img: e["ImageURL"] || null,
                     gender: {"M": 'male', "F": 'female', "U": null}[e["Sexe"]],
-                })
+                });
             });
-            
-            const pdf_url = await decryptFile(`./Geisler.encrypted.pdf`, passphrase)
+
+            return {
+                html_info_family,
+                whatsapp_conv_url,
+                pdf_data_buffer
+            };
+        }
+
+        async function main() {
+
+            loader();
+
+            let passwordKey = "pwd";
+            let queryParams = new URLSearchParams(window.location.search);
+            let passphrase = queryParams.get(passwordKey);
+
+            let { 
+                html_info_family,
+                whatsapp_conv_url,
+                pdf_data_buffer
+            } = await processFilesAndData(passphrase);
+
+            const pdf_blob = new Blob([pdf_data_buffer], { type: "mimeType" });
+            const pdf_url = URL.createObjectURL(pdf_blob);
 
             document.getElementById("iframe").src = (
                 pdf_url + "#toolbar=0&view=FitV&scrollbar=1"
@@ -421,8 +550,6 @@
     <style>
         
         .timer {
-            width: 50vmin;
-            height: 50vmin;
             border: 5vmin solid;
             border-image: conic-gradient(transparent var(--angle), rgba(var(--color), calc(255 - var(--color)), 0, 1) 0 100%) 1;
             /*
@@ -1339,7 +1466,6 @@
         //log("resize", n_time);
         for(var e of document.getElementsByClassName("text2fit")) {
             if (!isHidden(e)) {
-                log(e)
                 textFit(e, {
                     minFontSize:5,
                     maxFontSize: window.innerHeight,
@@ -1387,230 +1513,6 @@
 
 
 <script>
-
-    let individuals = {};
-
-    async function parseCSV(filePath) {
-        try {
-            // Fetch the file from the server
-            let response = await fetch(filePath);
-            let data = await response.text();
-
-            // Trim the data to remove any leading/trailing whitespace or newlines
-            data = data.trim();
-
-            let results = [];
-            let rows = data.split('\n');
-
-            // If there's no data or headers, return an empty array
-            if (rows.length === 0) return results;
-
-            let headers = parseCSVRow(rows[0]);
-
-            for (let i = 1; i < rows.length; i++) {
-                // If the row is empty, continue to the next iteration
-                if (!rows[i].trim()) continue;
-
-                let cells = parseCSVRow(rows[i]);
-                let obj = {};
-
-                for (let j = 0; j < headers.length; j++) {
-                    obj[headers[j].trim()] = cells[j] ? cells[j].trim() : '';
-                }
-
-                results.push(obj);
-            }
-
-            return results;
-
-        } catch (error) {
-            console.error('Error fetching or parsing CSV:', error);
-            return null;
-        }
-    }
-    function parseCSVRow(row) {
-        let cells = [];
-        let inQuotes = false;
-        let currentCell = '';
-
-        for(let i = 0; i < row.length; i++) {
-            let char = row[i];
-
-            if(inQuotes) {
-                if(char === '"') {
-                    if(i < row.length - 1 && row[i+1] === '"') {
-                        // Handle double quote escape sequence
-                        currentCell += '"';
-                        i++; // Skip next character
-                    } else {
-                        inQuotes = false;
-                    }
-                } else {
-                    currentCell += char;
-                }
-            } else {
-                if(char === ',') {
-                    cells.push(currentCell);
-                    currentCell = '';
-                } else if(char === '"') {
-                    inQuotes = true;
-                } else {
-                    currentCell += char;
-                }
-            }
-        }
-
-        cells.push(currentCell);
-
-        return cells;
-    }
-
-    async function deriveKey(passphrase, salt) {
-        const enc = new TextEncoder();
-        const passphraseKey = await crypto.subtle.importKey(
-            "raw",
-            enc.encode(passphrase),
-            { name: "PBKDF2" },
-            false,
-            ["deriveBits", "deriveKey"]
-        );
-        return crypto.subtle.deriveKey(
-            {
-            name: "PBKDF2",
-            salt: salt,
-            iterations: 100000,
-            hash: "SHA-256"
-            },
-            passphraseKey,
-            { name: "AES-GCM", length: 256 },
-            true,
-            ["encrypt", "decrypt"]
-        );
-    }
-
-    /**
-     * Translates between utf8 encoded hexadecimal strings
-     * and Uint8Array bytes.
-     */
-    const HexEncoder = {
-        parse: function (hexString) {
-            if (hexString.length % 2 !== 0) throw "Invalid hexString";
-            const arrayBuffer = new Uint8Array(hexString.length / 2);
-
-            for (let i = 0; i < hexString.length; i += 2) {
-                const byteValue = parseInt(hexString.substring(i, i + 2), 16);
-                if (isNaN(byteValue)) {
-                    throw "Invalid hexString";
-                }
-                arrayBuffer[i / 2] = byteValue;
-            }
-            return arrayBuffer;
-        },
-        stringify: function (bytes) {
-            const hexBytes = [];
-
-            for (let i = 0; i < bytes.length; ++i) {
-                let byteString = bytes[i].toString(16);
-                if (byteString.length < 2) {
-                    byteString = "0" + byteString;
-                }
-                hexBytes.push(byteString);
-            }
-            return hexBytes.join("");
-        },
-    };
-
-
-    async function encryptData(inputData, passphrase, mimeType = "application/octet-stream") {
-        const dataBuffer = typeof inputData === 'string' 
-            ? new TextEncoder().encode(inputData) 
-            : new Uint8Array(inputData);
-
-        const salt = crypto.getRandomValues(new Uint8Array(16));
-        const iv = crypto.getRandomValues(new Uint8Array(12));
-
-        const key = await deriveKey(passphrase, salt);
-        const encryptedData = await crypto.subtle.encrypt({
-            name: "AES-GCM",
-            iv: iv
-        }, key, dataBuffer);
-
-        const mimeTypeEncoder = new TextEncoder();
-        const mimeTypeBytes = mimeTypeEncoder.encode(mimeType);
-        const mimeTypeLengthBytes = new Uint8Array([mimeTypeBytes.length]);
-
-        const blobBuffer = new Uint8Array(1 + mimeTypeBytes.length + 16 + 12 + encryptedData.byteLength);
-        blobBuffer.set(mimeTypeLengthBytes, 0);
-        blobBuffer.set(mimeTypeBytes, 1);
-        blobBuffer.set(salt, 1 + mimeTypeBytes.length);
-        blobBuffer.set(iv, 17 + mimeTypeBytes.length);
-        blobBuffer.set(new Uint8Array(encryptedData), 29 + mimeTypeBytes.length);
-
-        return new Blob([blobBuffer.buffer], { type: "application/octet-stream" });
-    }
-
-
-    async function decryptData(blob, passphrase) {
-        // Convert blob to ArrayBuffer
-        const blobBuffer = await blob.arrayBuffer();
-
-        // Extract the MIME type length, which was stored in the first byte
-        const mimeTypeLength = new Uint8Array(blobBuffer, 0, 1)[0];
-
-        // Extract the MIME type using the length
-        const mimeTypeDecoder = new TextDecoder();
-        const mimeType = mimeTypeDecoder.decode(new Uint8Array(blobBuffer, 1, mimeTypeLength));
-
-        // Extract the salt, IV, and encrypted data
-        const saltStart = 1 + mimeTypeLength;
-        const ivStart = saltStart + 16;
-        const dataStart = ivStart + 12;
-
-        const salt = new Uint8Array(blobBuffer, saltStart, 16);
-        const iv = new Uint8Array(blobBuffer, ivStart, 12);
-        const encryptedData = blobBuffer.slice(dataStart);
-
-        const key = await deriveKey(passphrase, salt);
-
-        // Decrypt the data
-        const decryptedDataBuffer = await crypto.subtle.decrypt({
-            name: "AES-GCM",
-            iv: iv
-        }, key, encryptedData);
-
-        return {
-            mimeType: mimeType,
-            data: decryptedDataBuffer
-        };
-    }
-
-    async function decryptFromFileToArray(filePath, passphrase) {
-        // Fetch the blob and extract it from the response
-        const response = await fetch(filePath);
-        const blob = await response.blob();
-
-        const decryptedData = await decryptData(blob, passphrase);
-
-        return decryptedData.data;
-    }
-
-    async function decryptFile(filePath, passphrase) {
-        // Fetch the blob and extract it from the response
-        const response = await fetch(filePath);
-        const blob = await response.blob();
-
-        const decryptedData = await decryptData(blob, passphrase);
-
-        const decryptedContent = new Blob([decryptedData.data], { type: decryptedData.mimeType });
-        const downloadUrl = URL.createObjectURL(decryptedContent);
-
-        return downloadUrl;
-    }
-
-    let passwordKey = "pwd";
-    let queryParams = new URLSearchParams(window.location.search);
-    let passphrase = queryParams.get(passwordKey);
-
 </script>
 
 <script>
