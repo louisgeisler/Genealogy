@@ -225,10 +225,37 @@
         let nodes = [];
         let html_info_family;
         let whatsapp_conv_url;
-        let individuals = {};            
+        let individuals = {};   
+
+        function parseCSVWithWorker(text) {
+            return new Promise((resolve, reject) => {
+                const worker = new Worker('csvParserWorker.js');
+
+                worker.onmessage = function(event) {
+                    const receivedData = event.data;
+                    
+                    if (receivedData.error) {
+                        reject(new Error(receivedData.error));
+                    } else {
+                        resolve(receivedData);
+                    }
+                    
+                    // Terminate the worker after it's done
+                    worker.terminate();
+                };
+
+                worker.onerror = function(error) {
+                    reject(new Error("There was an error with the Worker process."));
+                };
+
+                // Send both filePath and passphrase to the worker
+                worker.postMessage(text, [text]);
+            });
+        }         
 
         async function parseCSV(data) {
             try {
+                data = new TextDecoder().decode(data);
 
                 // Trim the data to remove any leading/trailing whitespace or newlines
                 data = data.trim();
@@ -330,22 +357,21 @@
 
         async function processFilesAndData(passphrase) {
 
-            const [decrypted_data_buffer, csv_data_buffer, pdf_data_buffer] = await Promise.all([
+            
+            let startTime = performance.now();
+            const [decrypted_data_buffer, csv_data, pdf_data_buffer] = await Promise.all([
                 decryptWithWorker('./data.encrypted.txt', passphrase),
-                decryptWithWorker('./output.encrypted.csv', passphrase),
+                decryptWithWorker('./output.encrypted.csv', passphrase)
+                    .then(parseCSVWithWorker),
                 decryptWithWorker('./Geisler.encrypted.pdf', passphrase)
             ]);
+            log("Time to decypt files:", performance.now() - startTime, "ms");
 
             const decoded_data = new TextDecoder().decode(decrypted_data_buffer);
             decrypted_html = new DOMParser().parseFromString(decoded_data, "text/html");
 
             html_info_family = decrypted_html.getElementById("info_gen_template").innerHTML;
             whatsapp_conv_url = decrypted_html.getElementById("whatsapp_conv_url").textContent;
-
-            // Since csvDataBuffer is an ArrayBuffer, first convert it to text
-            const csvText = new TextDecoder().decode(csv_data_buffer);
-            // Assuming parseCSV is a function you have that processes a CSV string
-            const csv_data = await parseCSV(csvText);
             
             function p(pointer) {
                 const p2 = (v) => parseInt(v.replace("@", "").replace("I", ""));
@@ -357,7 +383,8 @@
                     return p2(pointer);
                 }  
             }
-                
+
+            startTime = performance.now();
             csv_data.forEach(e => {
                 individuals[e["ID"]] = e;
                 nodes.push({
@@ -373,6 +400,8 @@
                     gender: {"M": 'male', "F": 'female', "U": null}[e["Sexe"]],
                 });
             });
+            
+            log("Time to load pictures:", performance.now() - startTime, "ms");
 
             return {
                 html_info_family,
@@ -680,7 +709,7 @@
 
             score: 0,
             round_counter: 0,
-            max_round: 1,
+            max_round: 6,
 
             buttons: [...$("container").getElementsByTagName("button")],
 
@@ -1296,7 +1325,7 @@
             } else {
                 username = '';
             }
-            if ((username !== null) || (username!='')) {
+            if ((username !== null) && (username != '')) {
                 submitScore(username, game_name)
             }
             let emoji_gradient = ["😢", "😓", "😔", "😞", "🙁", "😕", "😶", "😐", "🙂", "😊", "😀", "😃", "😄", "😁", "😆", "🥳"];
@@ -1695,10 +1724,6 @@
 
 <script data-name="BMC-Widget" data-cfasync="false" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="louisgeisler" data-description="Support me on Buy me a coffee!" data-message="" data-color="##FFDD00" data-position="Right" data-x_margin="0" data-y_margin="0"></script>
 
-
-
-<script>
-</script>
 
 <script>
     main();
