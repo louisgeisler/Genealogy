@@ -1,8 +1,8 @@
 self.onmessage = function(event) {
-    const { data } = event.data;
+    const data = event.data;
 
     const csvText = new TextDecoder().decode(data);
-
+    
     parseCSV(csvText).then(result => {
         self.postMessage(result);
     }).catch(error => {
