@@ -253,41 +253,35 @@
             });
         }         
 
-        async function parseCSV(data) {
-            try {
-                data = new TextDecoder().decode(data);
+        function parseCSV(data) {
+            data = new TextDecoder().decode(data);
 
-                // Trim the data to remove any leading/trailing whitespace or newlines
-                data = data.trim();
+            // Trim the data to remove any leading/trailing whitespace or newlines
+            data = data.trim();
 
-                let results = [];
-                let rows = data.split('\n');
+            let results = [];
+            let rows = data.split('\n');
 
-                // If there's no data or headers, return an empty array
-                if (rows.length === 0) return results;
+            // If there's no data or headers, return an empty array
+            if (rows.length === 0) return results;
 
-                let headers = parseCSVRow(rows[0]);
+            let headers = parseCSVRow(rows[0]);
 
-                for (let i = 1; i < rows.length; i++) {
-                    // If the row is empty, continue to the next iteration
-                    if (!rows[i].trim()) continue;
+            for (let i = 1; i < rows.length; i++) {
+                // If the row is empty, continue to the next iteration
+                if (!rows[i].trim()) continue;
 
-                    let cells = parseCSVRow(rows[i]);
-                    let obj = {};
+                let cells = parseCSVRow(rows[i]);
+                let obj = {};
 
-                    for (let j = 0; j < headers.length; j++) {
-                        obj[headers[j].trim()] = cells[j] ? cells[j].trim() : '';
-                    }
-
-                    results.push(obj);
+                for (let j = 0; j < headers.length; j++) {
+                    obj[headers[j].trim()] = cells[j] ? cells[j].trim() : '';
                 }
 
-                return results;
-
-            } catch (error) {
-                console.error('Error fetching or parsing CSV:', error);
-                return null;
+                results.push(obj);
             }
+
+            return results;
         }
 
         function parseCSVRow(row) {
@@ -361,12 +355,13 @@
             let startTime = performance.now();
             let [decrypted_data_buffer, csv_data, pdf_data_buffer] = await Promise.all([
                 decryptWithWorker('./data.encrypted.txt', passphrase),
-                decryptWithWorker('./output.encrypted.csv', passphrase)
-                    .then(parseCSVWithWorker),
+                decryptWithWorker('./output.encrypted.csv', passphrase),
+                    //.then(parseCSVWithWorker),
                 decryptWithWorker('./Geisler.encrypted.pdf', passphrase)
             ]);
 
             //csv_data = await parseCSVWithWorker(csv_data);
+            csv_data = parseCSV(csv_data);
             log("Time to decypt files:", performance.now() - startTime, "ms");
 
             const decoded_data = new TextDecoder().decode(decrypted_data_buffer);
