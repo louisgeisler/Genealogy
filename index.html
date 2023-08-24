@@ -679,8 +679,8 @@
         const Game = {
 
             score: 0,
-            round_counter: 1,
-            max_round: 6,
+            round_counter: 0,
+            max_round: 8,
 
             buttons: [...$("container").getElementsByTagName("button")],
 
@@ -696,7 +696,7 @@
 
             init: function() {
                 this.score = 0;
-                this.round_counter = 1;
+                this.round_counter = 0;
                 window.location.href = "#PlayGame";
                 names = Object.keys(individuals);
                 names = names.filter(e => individuals[e]["ImageURL"]);
@@ -979,6 +979,8 @@
 
             round: async function(possible_generator) {
                 $("photo").innerHTML = "";
+                
+                let start = Date.now();
 
                 $("container").classList.remove("timer");
                 $("container").style.animationPlayState = 'running';
@@ -1017,7 +1019,6 @@
                 click_button_event = async () => {
                     let event;
                     let button;
-                    let start = Date.now();
                     do {
                         event = await new Promise(resolve => 
                             $("container").onclick = resolve
@@ -1034,7 +1035,7 @@
                                         1
                                     ),
                                     0
-                                )**(1.3)
+                                )**(1.5)
                             ) * 100
                         );
                         this.score += new_score;
@@ -1071,11 +1072,12 @@
                     "relationoscope": new this.possible_relation()
                 }[mode]
                 log(mode, possible_generator)
-                for(;this.round_counter<this.max_round; this.round_counter++) {
+                for(;this.round_counter<this.max_round;) {
+                    this.round_counter++;
                     await this.round(possible_generator);
                     await new Promise(resolve => setTimeout(resolve, 1000));
                 };
-                return await final();
+                return await final(mode);
             },
         }
 
@@ -1091,11 +1093,12 @@
 			display: grid;
 			grid-template-areas:
                 "phrase"
+                "leaderboard"
                 "share"
 				"retry";
 			justify-items: stretch;
 			align-content: stretch;
-            grid-template-rows: 4fr 2fr 2fr;
+            grid-template-rows: 2fr 7fr 1fr 1fr;
 			grid-template-columns: 1fr;
 			height: 100vh;
 			width: 100vw;
@@ -1111,11 +1114,35 @@
             justify-content: center;
             align-items: center;
         }
+
+        #lbc {
+            grid-area: leaderboard;
+            overflow-y: scroll;
+            overflow-x:hidden;
+            border: solid 1vmin black;
+            border-radius: 2vmin;
+        }
+
+        #leaderboard {
+            padding-left: 0%;
+            font-size: 5vmin;
+        }
+
+        #leaderboard > li {
+            padding: 0%;
+        }
+
     </style>
     <div id="highscore">
         <div class="text2fit" style="grid-area: phrase;">
-            <span id="emoji"></span><br>
-            <b>Ton Score:</b> <span id="final_score"></span>
+            <b>Ton Score:</b> <span id="final_score"></span> <span id="emoji"></span>
+            <hr>
+            Vous êtes dans le Top <span id="rank"></span>
+            <hr>
+            ⬇️ Meilleurs scores ⬇️
+        </div>
+        <div id="lbc" data-align-vert="false" data-align-horiz="false">
+            <ul id="leaderboard" style="list-style-type: none;"></ul>
         </div>
         <button id="share" class="wa_btn" style="grid-area: share;">
             <div class="icon" style="grid-area: icon1;"></div>
@@ -1124,16 +1151,90 @@
         </button>
         <button id="retry" class="text2fit">Réessayer</button>
     </div>
+    
+    <!-- Firebase App and Database -->
+    <script src="https://www.gstatic.com/firebasejs/8.0.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.0.0/firebase-database.js"></script>
     <script>
-        async function final() {
 
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDrzv1i1_navMkA--gpO07spdGupEK7Akg",
+            authDomain: "genealogy-95042.firebaseapp.com",
+            databaseURL: "https://genealogy-95042-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "genealogy-95042",
+            storageBucket: "genealogy-95042.appspot.com",
+            messagingSenderId: "402849492982",
+            appId: "1:402849492982:web:711b16d8ad2b27eb81a1d7",
+            measurementId: "G-H0JZZ12BT0"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+
+        function submitScore(username, game) {
+            const newScoreRef = firebase.database().ref(game + '/').push();
+            newScoreRef.set({
+                username: username,
+                score: Game.score
+            });
+        }
+
+        function populateLeaderboard(game) {
+            const dbRef = firebase.database().ref(game + '/');
+
+            dbRef.orderByChild('score').limitToLast(10).on("value", function(snapshot) {
+                const leaderboardList = document.getElementById('leaderboard');
+                leaderboardList.innerHTML = '';
+
+                snapshot.forEach(data => {
+                    const listItem = document.createElement("li");
+                    listItem.textContent = `${data.val().username}: ${data.val().score}`;
+                    leaderboardList.appendChild(listItem);
+                });
+            });
+        }
+
+        async function calculateRank(game, playerScore) {
+            const dbRef = firebase.database().ref(game + '/');
+            
+            return new Promise((resolve, reject) => {
+                dbRef.orderByChild('score').once("value", function(snapshot) {
+                    let rank = 0;
+                    snapshot.forEach(data => {
+                        if (data.val().score > playerScore) {
+                            rank++;
+                        }
+                    });
+
+                    resolve(rank + 1);
+                }).catch(error => {
+                    reject(error);
+                });
+            });
+        }
+
+    </script>
+    <script>
+        let username='';
+        async function final(game_name) {
+
+            let rank = await calculateRank(game_name, Game.score)
+            $("rank").innerHTML = rank;
+            username = prompt(`Vous êtes dans le Top ${rank}\nEntrez votre Prénom NOM:`, username);
+            if ((username != null) || (username!='')) {
+                submitScore(username, game_name)
+            }
             let emoji_gradient = ["😢", "😓", "😔", "😞", "🙁", "😕", "😶", "😐", "🙂", "😊", "😀", "😃", "😄", "😁", "😆", "🥳"];
-            let emoji_index = Math.floor((Game.score / Game.max_round / 100) * (emoji_gradient.length - 1));
+            let emoji_index = Math.floor((Game.score / Game.max_round / 100)**2 * (emoji_gradient.length - 1));
+            log(Game.score, Game.max_round, (Game.score / Game.max_round / 100), emoji_index)
             $("emoji").innerText = emoji_gradient[emoji_index];
 
             window.location.href = "#EndGame";
             
             $("final_score").innerText = Game.score;
+
+            populateLeaderboard(game_name);
 
             window.onresize();
 
@@ -1479,7 +1580,7 @@
                 textFit(e, {
                     minFontSize:5,
                     maxFontSize: window.innerHeight,
-                    alignVert: true,
+                    alignVert: (e.dataset.alignVert===undefined) || (e.dataset.alignVert!==undefined && e.dataset.alignVert==""),
                     alignHoriz: (e.dataset.alignHoriz===undefined) || (e.dataset.alignHoriz!==undefined && e.dataset.alignHoriz==""),
                 });
             }
