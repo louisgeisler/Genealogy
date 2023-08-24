@@ -4,7 +4,7 @@ self.onmessage = function(event) {
 
     fetchAndDecryptToArrayBuffer(filePath, passphrase)
         .then(result => {
-            self.postMessage(result);
+            self.postMessage(result, [result]);
         })
         .catch(error => {
             self.postMessage({ error: error.message });
