@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Read File Client Side</title>
+</head>
+<body>
+<label for="pp">Mot De Passe: </label>
+<input type="text" id="passphrase" name="pp" size="40" /><br><br>
+<label for="encryption">Encryption:</label>
+<input type="file" id="encryption"><br><br>
+<label for="decryption">Decryption:</label>
+<input type="file" id="decryption"><br><br>
+
+<script>
+
+    function generatePassphrase(length) {
+      const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      let result = "";
+      for (let i = 0; i < length; i++) {
+        const randomIndex = Math.floor(Math.random() * charset.length);
+        result += charset[randomIndex];
+      }
+      return result;
+    }
+    
+    async function deriveKey(passphrase, salt) {
+      const enc = new TextEncoder();
+      const passphraseKey = await crypto.subtle.importKey(
+        "raw",
+        enc.encode(passphrase),
+        { name: "PBKDF2" },
+        false,
+        ["deriveBits", "deriveKey"]
+      );
+      return crypto.subtle.deriveKey(
+        {
+          name: "PBKDF2",
+          salt: salt,
+          iterations: 100000,
+          hash: "SHA-256"
+        },
+        passphraseKey,
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+      );
+    }
+    
+    /**
+     * Translates between utf8 encoded hexadecimal strings
+     * and Uint8Array bytes.
+     */
+     const HexEncoder = {
+        parse: function (hexString) {
+            if (hexString.length % 2 !== 0) throw "Invalid hexString";
+            const arrayBuffer = new Uint8Array(hexString.length / 2);
+    
+            for (let i = 0; i < hexString.length; i += 2) {
+                const byteValue = parseInt(hexString.substring(i, i + 2), 16);
+                if (isNaN(byteValue)) {
+                    throw "Invalid hexString";
+                }
+                arrayBuffer[i / 2] = byteValue;
+            }
+            return arrayBuffer;
+        },
+        stringify: function (bytes) {
+            const hexBytes = [];
+    
+            for (let i = 0; i < bytes.length; ++i) {
+                let byteString = bytes[i].toString(16);
+                if (byteString.length < 2) {
+                    byteString = "0" + byteString;
+                }
+                hexBytes.push(byteString);
+            }
+            return hexBytes.join("");
+        },
+    };
+    
+    
+    async function encryptData(inputData, passphrase, mimeType = "application/octet-stream") {
+        const dataBuffer = typeof inputData === 'string' 
+            ? new TextEncoder().encode(inputData) 
+            : new Uint8Array(inputData);
+    
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+    
+        const key = await deriveKey(passphrase, salt);
+        const encryptedData = await crypto.subtle.encrypt({
+            name: "AES-GCM",
+            iv: iv
+        }, key, dataBuffer);
+    
+        const mimeTypeEncoder = new TextEncoder();
+        const mimeTypeBytes = mimeTypeEncoder.encode(mimeType);
+        const mimeTypeLengthBytes = new Uint8Array([mimeTypeBytes.length]);
+    
+        const blobBuffer = new Uint8Array(1 + mimeTypeBytes.length + 16 + 12 + encryptedData.byteLength);
+        blobBuffer.set(mimeTypeLengthBytes, 0);
+        blobBuffer.set(mimeTypeBytes, 1);
+        blobBuffer.set(salt, 1 + mimeTypeBytes.length);
+        blobBuffer.set(iv, 17 + mimeTypeBytes.length);
+        blobBuffer.set(new Uint8Array(encryptedData), 29 + mimeTypeBytes.length);
+    
+        return new Blob([blobBuffer.buffer], { type: "application/octet-stream" });
+    }
+    
+    
+    async function decryptData(blob, passphrase) {
+        // Convert blob to ArrayBuffer
+        const blobBuffer = await blob.arrayBuffer();
+    
+        // Extract the MIME type length, which was stored in the first byte
+        const mimeTypeLength = new Uint8Array(blobBuffer, 0, 1)[0];
+    
+        // Extract the MIME type using the length
+        const mimeTypeDecoder = new TextDecoder();
+        const mimeType = mimeTypeDecoder.decode(new Uint8Array(blobBuffer, 1, mimeTypeLength));
+    
+        // Extract the salt, IV, and encrypted data
+        const saltStart = 1 + mimeTypeLength;
+        const ivStart = saltStart + 16;
+        const dataStart = ivStart + 12;
+    
+        const salt = new Uint8Array(blobBuffer, saltStart, 16);
+        const iv = new Uint8Array(blobBuffer, ivStart, 12);
+        const encryptedData = blobBuffer.slice(dataStart);
+    
+        const key = await deriveKey(passphrase, salt);
+    
+        // Decrypt the data
+        const decryptedDataBuffer = await crypto.subtle.decrypt({
+            name: "AES-GCM",
+            iv: iv
+        }, key, encryptedData);
+    
+        return {
+            mimeType: mimeType,
+            data: decryptedDataBuffer
+        };
+    }
+
+</script>
+
+
+<script>
+
+    const passphraseLength = 32; // Example size
+    let passphrase = generatePassphrase(passphraseLength);
+    document.getElementById("passphrase").value = passphrase
+    
+    document.getElementById("passphrase").onchange = function () {
+        passphrase = this.value;
+    };
+
+    document.getElementById('encryption').addEventListener('change', async (event) => {
+        event.target.value=null;
+        const file = event.target.files[0];
+        if (file) {
+            const content = await readContent(file);
+            
+            const blob = await encryptData(content, passphrase, file.type);
+
+            const downloadUrl = URL.createObjectURL(blob);
+
+            // Split the filename to get the name and the extension
+            const filenameParts = file.name.split('.');
+            const extension = filenameParts.pop();
+            const name = filenameParts.join('.');
+            const encryptedFilename = `${name}.encrypted.${extension}`;
+
+            // Create a temporary anchor element and trigger a download
+            const tempLink = document.createElement('a');
+            tempLink.href = downloadUrl;
+            tempLink.download = encryptedFilename;
+            tempLink.click();
+
+            // Cleanup the URL object to free resources
+            URL.revokeObjectURL(downloadUrl);
+        }
+    });
+
+    function readContent(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    document.getElementById('decryption').addEventListener('change', async (event) => {
+        event.target.value=null;
+        const file = event.target.files[0];
+        if (file) {
+            const encryptedContent = await readContent(file);
+
+            // Decrypt the content
+            const decryptedData = await decryptData(new Blob([encryptedContent]), passphrase);
+            const decryptedContent = decryptedData.data;
+
+            const downloadUrl = URL.createObjectURL(new Blob([decryptedContent], {type: decryptedData.mimeType}));
+
+            // Create the decrypted filename
+            const filenameParts = file.name.split('.');
+            if (filenameParts[filenameParts.length - 2] === 'encrypted') {  // Ensure it has '.encrypted.' pattern
+                filenameParts.splice(-2, 1);  // Remove the 'encrypted' part
+            }
+            const decryptedFilename = filenameParts.join('.');
+
+            // Create a temporary anchor element and trigger a download
+            const tempLink = document.createElement('a');
+            tempLink.href = downloadUrl;
+            tempLink.download = decryptedFilename;
+            tempLink.click();
+
+            // Cleanup the URL object to free resources
+            URL.revokeObjectURL(downloadUrl);
+        }
+    });
+
+</script>
+
+
+</body>
+</html>
